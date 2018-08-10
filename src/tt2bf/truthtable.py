@@ -149,8 +149,8 @@ class TruthTable:
 
     def infer(self, P, *, solver_cmd):
         self.P = P
-        # self.solver = StreamSolver(cmd=solver_cmd)
-        self.solver = FileSolver(cmd=solver_cmd, filename_prefix=f'out/tt_P{P}')
+        self.solver = StreamSolver(cmd=solver_cmd)
+        # self.solver = FileSolver(cmd=solver_cmd, filename_prefix=f'out/tt_P{P}')
         self._declare_reduction()
         raw_assignment = self.solver.solve()
 
