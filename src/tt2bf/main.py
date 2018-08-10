@@ -36,6 +36,7 @@ def cli(filename_truth_table, filename_output, sat_solver):
         log_info(f'Trying P = {P}...')
         boolean_formula = truth_table.infer(P, solver_cmd=sat_solver)
         if boolean_formula:
+            log_br()
             log_success(f'Boolean formula: {boolean_formula}')
             break
     else:
