@@ -18,6 +18,8 @@ class ParseTree:
 
     class Node:
 
+        names = None
+
         def __init__(self, nodetype, terminal):
             assert 0 <= nodetype <= 4
             self.nodetype = nodetype
@@ -61,7 +63,10 @@ class ParseTree:
 
         def __str__(self):
             if self.nodetype == 0:  # Terminal
-                return self.names[self.terminal]
+                if self.names is not None:
+                    return self.names[self.terminal - 1]
+                else:
+                    return f'x{self.terminal}'
             elif self.nodetype == 1:  # AND
                 left = str(self.child_left)
                 right = str(self.child_right)
@@ -86,11 +91,10 @@ class ParseTree:
             elif self.nodetype == 4:  # None
                 raise ValueError(f'why are you trying to display None-typed node?')
 
-    def __init__(self, names, nodetype, terminal, parent, child_left, child_right):
+    def __init__(self, nodetype, terminal, parent, child_left, child_right):
         # Note: all arguments are 1-based
         assert len(nodetype) == len(terminal) == len(parent) == len(child_left) == len(child_right)
 
-        self.Node.names = names
         P = len(nodetype) - 1
         nodes = [None] + [self.Node(nt, tn) for nt, tn in zip(nodetype[1:], terminal[1:])]  # 1-based
         for p in closed_range(1, P):
@@ -115,29 +119,51 @@ class TruthTable:
     Reduction = namedtuple('Reduction', VARIABLES)
     Assignment = namedtuple('Assignment', VARIABLES + ' P')
 
-    def __init__(self, names, inputs, values):
-        assert len(inputs) == len(values)
-        # Note: all variables are 1-based
-        self.names = [None] + names
+    def __init__(self, inputs, values, names=None):
+        # inputs::[U,X] -- variables values
+        # values::[U] -- Boolean function values
+        U = len(inputs)
+        X = len(inputs[0])
+        log_debug(f'Creating TruthTable with U={U}, X={X}')
+        assert len(values) == U
+        assert all(len(input_) == X for input_ in inputs)
+        # Note: arguments are 0-based, but main fields are 1-based
         self.inputs = [None] + [s2b(input_) for input_ in inputs]
         self.values = s2b(values)
+        # Note: names are left 0-based
+        if names is not None:
+            assert len(names) == X
+            self.names = names
+        else:
+            self.names = [f'x{i}' for i in closed_range(1, X)]
 
     @classmethod
     def from_file(cls, filename):
+        inputs = []
+        values = []
+        pattern = re.compile(r'(?P<lhs>[01]+).+(?P<value>[01])')
+
+        def process_line(line):
+            m = pattern.match(re.sub(r'\s*', '', line))
+            if m:
+                lhs, value = m.groups()
+                inputs.append(tuple(lhs))
+                values.append(value)
+            else:
+                log_warn(f'Can\'t parse line "{line}"')
+
         with click.open_file(filename) as f:
-            inputs = []
-            values = []
-            names = f.readline().split()
+            first_line = f.readline()
+            if first_line.startswith('0') or first_line.startswith('1'):
+                names = None
+                process_line(first_line)
+            else:
+                names = first_line.split()
 
             for line in f:
-                m = re.match(r'(?P<lhs>[01]+).+(?P<value>[01])', re.sub(r'\s', '', line))
-                if m:
-                    lhs, value = m.groups()
-                    inputs.append(tuple(lhs))
-                    values.append(value)
-                else:
-                    log_warn(f'Can\'t parse line "{line}"')
-        return cls(names, inputs, values)
+                process_line(line)
+
+        return cls(inputs, values, names=names)
 
     @property
     def number_of_variables(self):
@@ -147,21 +173,25 @@ class TruthTable:
     def number_of_clauses(self):
         return self.solver.number_of_clauses
 
-    def infer(self, P, *, solver_cmd):
+    def infer(self, P, *, solver_cmd, solver_type='stream'):
         self.P = P
-        self.solver = StreamSolver(cmd=solver_cmd)
-        # self.solver = FileSolver(cmd=solver_cmd, filename_prefix=f'out/tt_P{P}')
+        if solver_type == 'stream':
+            self.solver = StreamSolver(cmd=solver_cmd)
+        elif solver_type =='file':
+            self.solver = FileSolver(cmd=solver_cmd, filename_prefix=f'out/tt_P{P}')
+        else:
+            raise ValueError(f'Unsupported solver type: "{solver_type}"')
         self._declare_reduction()
         raw_assignment = self.solver.solve()
 
         if raw_assignment:
             assignment = self.parse_raw_assignment(raw_assignment)
-            parse_tree = ParseTree(self.names,
-                                   assignment.nodetype,
+            parse_tree = ParseTree(assignment.nodetype,
                                    assignment.terminal,
                                    assignment.parent,
                                    assignment.child_left,
                                    assignment.child_right)
+            parse_tree.Node.names = self.names
             return parse_tree
         else:
             return None
@@ -175,7 +205,7 @@ class TruthTable:
         #  CONSTANTS
         # =-=-=-=-=-=
 
-        X = len(self.names) - 1  # 1-based!
+        X = len(self.names)  # 0-based!
         U = len(self.inputs) - 1  # 1-based!
 
         new_variable = self.solver.new_variable
