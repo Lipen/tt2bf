@@ -39,17 +39,34 @@ def cli(filename_truth_table, filename_output, Pmin, Pmax, sat_solver, solver_ty
 
     truth_table = TruthTable.from_file(filename_truth_table)
 
-    for P in closed_range(Pmin, Pmax):
-        log_br()
-        log_info(f'Trying P = {P}...')
-        boolean_formula = truth_table.infer(P, solver_cmd=sat_solver, solver_type=solver_type)
-        if boolean_formula:
+    if Pmax >= Pmin:
+        for P in closed_range(Pmin, Pmax):
+            log_br()
+            log_info(f'Trying P = {P}...')
+            boolean_formula = truth_table.infer(P, solver_cmd=sat_solver, solver_type=solver_type)
+            if boolean_formula:
+                log_br()
+                log_success(f'Boolean formula: {boolean_formula}')
+                break
+        else:
+            log_br()
+            log_error('Can\'t find Boolean formula :c', symbol='-')
+    else:
+        best = None
+        for P in reversed(closed_range(Pmax, Pmin)):
+            log_br()
+            log_info(f'Trying P = {P}...')
+            boolean_formula = truth_table.infer(P, solver_cmd=sat_solver, solver_type=solver_type)
+            if boolean_formula:
+                best = boolean_formula
+            else:
+                break
+        if best:
             log_br()
             log_success(f'Boolean formula: {boolean_formula}')
-            break
-    else:
-        log_br()
-        log_error('Can\'t find Boolean formula :c', symbol='-')
+        else:
+            log_br()
+            log_error('Can\'t find Boolean formula :c', symbol='-')
 
     log_br()
     log_success(f'All done in {time.time() - time_start:.2f} s')
